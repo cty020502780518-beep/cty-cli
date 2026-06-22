@@ -92,7 +92,7 @@ cty-cli/
 ├── plan.py              # Task tracking (exposed as tools)
 ├── memory.py            # Persistent memory (~/.cty-cli/memory/)
 ├── skills.py            # Progressive skill loading
-├── ui.py                # Terminal TUI (Rich)
+├── ui.py                # Terminal UI (direct streaming)
 ├── config.py            # Model/provider switching
 ├── providers/
 │   ├── __init__.py      # Factory
@@ -133,8 +133,7 @@ summarized and replaced with a `[Compressed history]` block. The most recent
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.9+
 - anthropic >= 0.39.0
 - openai >= 1.0.0
-- rich >= 13.0.0
 - python-dotenv >= 1.0.0
