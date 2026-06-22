@@ -2,9 +2,9 @@
 Tool system — defines the tools the agent can use and executes them.
 Mirrors the MCP/tool-use layer in Claude Code.
 
-12 tools total:
+13 tools total:
   4 file ops: read_file, write_file, edit_file (+diff), list_files
-  2 system:   execute_command, search_code
+  3 system:   execute_command, search_code, web_search
   3 plan:     plan_create, plan_update, plan_list
   2 memory:   memory_save, memory_recall
   1 skill:    load_skill
@@ -94,6 +94,18 @@ TOOL_DEFINITIONS = [
                 "file_glob": {"type": "string", "description": "Only search files matching this glob (e.g. *.py)"},
             },
             "required": ["pattern"],
+        },
+    },
+    {
+        "name": "web_search",
+        "description": "Search the web for up-to-date information. Returns titles, URLs, and snippets. Use this when you need current facts, news, or information beyond your training cutoff.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query string"},
+                "max_results": {"type": "integer", "description": "Maximum number of results (default: 5, max: 10)"},
+            },
+            "required": ["query"],
         },
     },
     # ── Plan / Task tracking ──
@@ -346,6 +358,34 @@ def search_code(pattern: str, path: str = ".", file_glob: Optional[str] = None) 
     return "\n".join(results)
 
 
+# ── Web search ───────────────────────────────────────────────────────────
+
+def web_search(query: str, max_results: int = 5) -> str:
+    """Search the web using DuckDuckGo. No API key needed."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        return "Error: ddgs not installed. Run: pip install ddgs"
+
+    max_results = min(max(1, max_results), 10)
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results, region="us-en"))
+    except Exception as e:
+        return f"Search error: {e}"
+
+    if not results:
+        return f"No results found for: {query}"
+
+    lines = []
+    for i, r in enumerate(results, 1):
+        title = r.get("title", "No title")
+        href = r.get("href", "")
+        body = r.get("body", "")[:300]
+        lines.append(f"{i}. {title}\n   {href}\n   {body}")
+    return "\n\n".join(lines)
+
+
 # ── Plan tools ──────────────────────────────────────────────────────────
 
 def plan_create(title: str, description: str = "") -> str:
@@ -417,6 +457,7 @@ TOOL_MAP: dict[str, Callable] = {
     "list_files": list_files,
     "execute_command": execute_command,
     "search_code": search_code,
+    "web_search": web_search,
     "plan_create": plan_create,
     "plan_update": plan_update,
     "plan_list": plan_list,

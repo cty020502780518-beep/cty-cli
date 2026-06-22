@@ -72,6 +72,7 @@ python main.py
 | `list_files` | read | List directory contents |
 | `execute_command` | exec | Run shell commands |
 | `search_code` | read | Regex search in files |
+| `web_search` | read | Search the web (DuckDuckGo, no API key) |
 | `plan_create` | write | Create a task |
 | `plan_update` | write | Update task status |
 | `plan_list` | read | List all tasks |
@@ -85,7 +86,7 @@ python main.py
 cty-cli/
 ├── main.py              # Entry point + REPL
 ├── agent.py             # Core agent loop
-├── tools.py             # 12 tool definitions + execution
+├── tools.py             # 13 tool definitions + execution
 ├── permissions.py       # 3-tier permission system
 ├── context.py           # Token estimation + compression
 ├── trace.py             # Step-by-step execution logging

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 # ── Risk classification ──────────────────────────────────────────────
 
-READ_TOOLS = {"read_file", "list_files", "search_code", "plan_list"}
+READ_TOOLS = {"read_file", "list_files", "search_code", "web_search", "plan_list"}
 WRITE_TOOLS = {"write_file", "edit_file", "plan_create", "plan_update"}
 EXEC_TOOLS = {"execute_command"}
 SKILL_TOOLS = {"load_skill"}
