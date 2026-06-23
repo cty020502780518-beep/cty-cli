@@ -8,5 +8,11 @@ version = "0.1.0"
 description = "A minimalist Claude Code-style coding agent for the terminal"
 requires-python = ">=3.9"
 
+[tool.setuptools]
+py-modules = ["main", "agent", "config", "context", "memory", "permissions", "plan", "security", "skills", "tools", "trace", "ui"]
+
+[tool.setuptools.packages.find]
+include = ["providers*"]
+
 [project.scripts]
 cty-cli = "main:main"
