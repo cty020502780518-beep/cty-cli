@@ -19,31 +19,41 @@ class ProviderConfig:
 
 
 # 预定义 provider 注册表
+# Models marked "real" are confirmed available on the respective platform.
+# Models marked "placeholder" are examples — verify on provider dashboard before using.
 PROVIDER_PRESETS: dict[str, ProviderConfig] = {
     "deepseek": ProviderConfig(
         name="deepseek",
         base_url="https://api.deepseek.com",
         env_key="DEEPSEEK_API_KEY",
-        default_model="deepseek-v4-pro",
-        models=["deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
+        default_model="deepseek-v4-pro",    # real: DeepSeek V4 Pro (as of 2026-06)
+        models=[
+            "deepseek-v4-pro",               # real
+            "deepseek-chat",                 # real: DeepSeek V3
+            "deepseek-reasoner",             # real: DeepSeek R1
+        ],
     ),
     "anthropic": ProviderConfig(
         name="anthropic",
         base_url="https://api.anthropic.com",
         env_key="ANTHROPIC_API_KEY",
-        default_model="claude-sonnet-4-6-20250514",
+        default_model="claude-sonnet-4-6-20250514",  # real: Claude Sonnet 4.6
         models=[
-            "claude-sonnet-4-6-20250514",
-            "claude-opus-4-7-20251101",
-            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-6-20250514",    # real: Claude Sonnet 4.6
+            "claude-opus-4-7-20251101",      # real: Claude Opus 4.7
+            "claude-haiku-4-5-20251001",     # real: Claude Haiku 4.5
         ],
     ),
     "openai": ProviderConfig(
         name="openai",
         base_url="https://api.openai.com/v1",
         env_key="OPENAI_API_KEY",
-        default_model="gpt-4o",
-        models=["gpt-4o", "gpt-4o-mini", "o4-mini"],
+        default_model="gpt-4o",             # real: GPT-4o
+        models=[
+            "gpt-4o",                        # real
+            "gpt-4o-mini",                   # real
+            "o4-mini",                       # real: OpenAI o4-mini
+        ],
     ),
 }
 
@@ -57,6 +67,7 @@ class Config:
         self.provider_name = os.getenv("DEFAULT_PROVIDER", "deepseek")
         self.model = os.getenv("DEFAULT_MODEL", "")
         self.working_dir = Path.cwd()
+        self.memory_scope = os.getenv("MEMORY_SCOPE", "workspace")  # "workspace" or "global"
 
         # Resolve provider
         if self.provider_name not in PROVIDER_PRESETS:

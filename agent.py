@@ -15,6 +15,7 @@ from tools import (
     set_tool_context,
 )
 from permissions import PermissionManager, tool_risk, describe_risk, NEEDS_APPROVAL
+from security import PathGuard, CommandGuard
 from context import ContextManager
 from trace import Tracer
 from plan import PlanManager
@@ -63,13 +64,20 @@ class Agent:
         self.context = ContextManager()
         self.tracer = Tracer()
         self.planner = PlanManager()
-        self.memory = MemoryManager()
+        self.memory = MemoryManager(
+            scope=getattr(config, 'memory_scope', 'workspace'),
+            workspace_root=config.working_dir,
+        )
         self.skills = SkillManager()
+        self.path_guard = PathGuard(workspace_root=config.working_dir)
+        self.command_guard = CommandGuard()
 
         set_tool_context(
             plan_manager=self.planner,
             memory_manager=self.memory,
             skill_manager=self.skills,
+            path_guard=self.path_guard,
+            command_guard=self.command_guard,
         )
 
         self.messages: list[dict] = []
@@ -121,7 +129,14 @@ class Agent:
             self._handle_command(user_input)
             return
 
-        self.messages.append(self.provider.make_user_message(user_input))
+        # Auto-recall relevant memories before LLM call
+        recall = self.memory.auto_recall(user_input)
+        if recall:
+            self.messages.append(self.provider.make_user_message(
+                f"{recall}\n\n---\nUser: {user_input}"
+            ))
+        else:
+            self.messages.append(self.provider.make_user_message(user_input))
         self._agent_loop()
 
     # -- Agent loop -----------------------------------------------------
@@ -254,17 +269,22 @@ class Agent:
 
         elif cmd == "/help":
             self.ui.system(
-                "/model <name>     Switch model\n"
-                "/provider <name>  Switch provider\n"
-                "/providers        List providers\n"
-                "/models           List models\n"
-                "/config           Show config\n"
-                "/trace            Show execution trace\n"
-                "/plan             Show plan\n"
-                "/skills           List skills\n"
-                "/memory           List memories\n"
-                "/clear            Clear conversation\n"
-                "/exit             Quit"
+                "/model <name>        Switch model\n"
+                "/provider <name>     Switch provider\n"
+                "/providers           List providers\n"
+                "/models              List models\n"
+                "/config              Show config\n"
+                "/trace               Show execution trace\n"
+                "/plan                Show plan\n"
+                "/skills              List skills\n"
+                "/memory list         List all memories\n"
+                "/memory add <text>   Add a memory\n"
+                "/memory search <q>   Search memories\n"
+                "/memory delete <id>  Delete a memory\n"
+                "/memory clear        Clear all memories\n"
+                "/memory export       Export memories as JSON\n"
+                "/clear               Clear conversation\n"
+                "/exit                Quit"
             )
 
         elif cmd == "/model":
@@ -300,11 +320,66 @@ class Agent:
             self.ui.system(self.skills.list_skills())
 
         elif cmd == "/memory":
-            mems = self.memory.list_all()
-            if not mems:
-                self.ui.system("No memories saved yet.")
+            # Subcommand: /memory list|add|search|delete|clear|export
+            sub_parts = arg.split(maxsplit=1)
+            sub = sub_parts[0].lower() if sub_parts else "list"
+            sub_arg = sub_parts[1] if len(sub_parts) > 1 else ""
+
+            if sub == "list" or sub == "":
+                mems = self.memory.list_all()
+                if not mems:
+                    self.ui.system("No memories saved yet. Use /memory add <text> to add one.")
+                else:
+                    lines = [f"  [{i}] [{m.id[:8]}] [{','.join(m.tags) if m.tags else 'no tags'}] {m.content[:100]}" for i, m in enumerate(mems, 1)]
+                    self.ui.system(f"{len(mems)} memories (stored at {self.memory.storage_path}):\n" + "\n".join(lines))
+
+            elif sub == "add":
+                if not sub_arg:
+                    self.ui.system("Usage: /memory add <text to remember>")
+                else:
+                    try:
+                        entry = self.memory.add(sub_arg, source="user")
+                        self.ui.system(f"Saved: [{entry.id[:8]}] {entry.content[:100]}")
+                    except ValueError as e:
+                        self.ui.system(f"Cannot save: {e}")
+
+            elif sub == "search":
+                if not sub_arg:
+                    self.ui.system("Usage: /memory search <query>")
+                else:
+                    results = self.memory.search(sub_arg)
+                    if not results:
+                        self.ui.system(f"No matches for '{sub_arg}'")
+                    else:
+                        lines = [f"  [{m.id[:8]}] [{','.join(m.tags) if m.tags else 'no tags'}] {m.content[:120]}" for m in results]
+                        self.ui.system(f"Found {len(results)}:\n" + "\n".join(lines))
+
+            elif sub == "delete":
+                if not sub_arg:
+                    self.ui.system("Usage: /memory delete <id-prefix>")
+                else:
+                    # Find by prefix
+                    found = [m for m in self.memory.list_all() if m.id.startswith(sub_arg)]
+                    if not found:
+                        self.ui.system(f"No memory with id prefix '{sub_arg}'")
+                    elif len(found) > 1:
+                        self.ui.system(f"Multiple matches. Be more specific:\n" + "\n".join(f"  [{m.id[:8]}] {m.content[:60]}" for m in found))
+                    else:
+                        self.memory.delete(found[0].id)
+                        self.ui.system(f"Deleted: [{found[0].id[:8]}] {found[0].content[:80]}")
+
+            elif sub == "clear":
+                count = self.memory.clear()
+                self.ui.system(f"Cleared {count} memories.")
+
+            elif sub == "export":
+                data = self.memory.export()
+                import json
+                output = json.dumps(data, ensure_ascii=False, indent=2)
+                self.ui.system(f"Export ({len(data)} entries):\n{output}")
+
             else:
-                self.ui.system("\n".join(f"[{m.type}] {m.title}" for m in mems))
+                self.ui.system(f"Unknown /memory subcommand: {sub}. Try /memory list|add|search|delete|clear|export")
 
         elif cmd == "/clear":
             self.messages = [self.messages[0]]

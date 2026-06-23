@@ -179,6 +179,19 @@ TOOL_DEFINITIONS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "memory_store",
+        "description": "Store new information into persistent memory. Use when the user shares preferences, project context, or anything worth remembering across sessions. Content is filtered for sensitive information before storage.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "What to remember"},
+                "tags": {"type": "string", "description": "Comma-separated tags for categorization (e.g. 'coding,preferences')"},
+                "importance": {"type": "integer", "description": "Importance 1-5 (1=low, 5=critical)"},
+            },
+            "required": ["content"],
+        },
+    },
 ]
 
 
@@ -187,11 +200,14 @@ TOOL_DEFINITIONS = [
 _context: dict[str, Any] = {}
 
 
-def set_tool_context(plan_manager=None, memory_manager=None, skill_manager=None):
+def set_tool_context(plan_manager=None, memory_manager=None, skill_manager=None,
+                     path_guard=None, command_guard=None):
     """Inject runtime dependencies into the tool layer."""
     _context["plan"] = plan_manager
     _context["memory"] = memory_manager
     _context["skills"] = skill_manager
+    _context["path_guard"] = path_guard
+    _context["command_guard"] = command_guard
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -227,6 +243,12 @@ def _generate_diff(old: str, new: str, filepath: str) -> str:
 # ── File tools ──────────────────────────────────────────────────────────
 
 def read_file(file_path: str, offset: int = 0, limit: Optional[int] = None) -> str:
+    guard = _context.get("path_guard")
+    if guard:
+        g = guard.check_read(file_path)
+        if not g.allowed:
+            return f"Security blocked: {g.reason}"
+
     p = Path(file_path).expanduser().resolve()
     if not p.exists():
         return f"Error: file not found: {p}"
@@ -246,6 +268,12 @@ def read_file(file_path: str, offset: int = 0, limit: Optional[int] = None) -> s
 
 
 def write_file(file_path: str, content: str) -> str:
+    guard = _context.get("path_guard")
+    if guard:
+        g = guard.check_write(file_path)
+        if not g.allowed:
+            return f"Security blocked: {g.reason}"
+
     p = Path(file_path).expanduser().resolve()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -256,6 +284,12 @@ def write_file(file_path: str, content: str) -> str:
 
 
 def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+    guard = _context.get("path_guard")
+    if guard:
+        g = guard.check_write(file_path)
+        if not g.allowed:
+            return f"Security blocked: {g.reason}"
+
     p = Path(file_path).expanduser().resolve()
     if not p.exists():
         return f"Error: file not found: {p}"
@@ -308,6 +342,12 @@ def list_files(path: str) -> str:
 # ── System tools ────────────────────────────────────────────────────────
 
 def execute_command(command: str, working_dir: Optional[str] = None) -> str:
+    cmd_guard = _context.get("command_guard")
+    if cmd_guard:
+        g = cmd_guard.check(command)
+        if not g.allowed:
+            return f"Security blocked: {g.reason}"
+
     cwd = Path(working_dir).expanduser().resolve() if working_dir else Path.cwd()
     try:
         result = subprocess.run(
@@ -417,21 +457,20 @@ def memory_save(type: str, title: str, content: str) -> str:
     valid_types = {"user", "project", "feedback", "reference"}
     if type not in valid_types:
         return f"Invalid type '{type}'. Use: {', '.join(valid_types)}"
-    mem = mm.save(type, title, content)
-    return f"Saved memory '{mem.id}' [{mem.type}] — {mem.title}"
+    return mm.tool_store(content, tags=type, importance=3)
 
 def memory_recall(query: str) -> str:
     mm = _context.get("memory")
     if not mm:
         return "Error: memory manager not initialized"
-    results = mm.recall(query)
-    if not results:
-        return f"No memories found for '{query}'"
-    lines = [f"Found {len(results)} memories:"]
-    for m in results:
-        lines.append(f"\n  [{m.type}] {m.title}")
-        lines.append(f"  {m.content[:200]}")
-    return "\n".join(lines)
+    return mm.tool_recall(query)
+
+def memory_store(content: str, tags: str = "", importance: int = 1) -> str:
+    """New unified store tool — agent can save any memory with tags."""
+    mm = _context.get("memory")
+    if not mm:
+        return "Error: memory manager not initialized"
+    return mm.tool_store(content, tags=tags, importance=importance)
 
 
 # ── Skill tools ─────────────────────────────────────────────────────────
@@ -463,6 +502,7 @@ TOOL_MAP: dict[str, Callable] = {
     "plan_list": plan_list,
     "memory_save": memory_save,
     "memory_recall": memory_recall,
+    "memory_store": memory_store,
     "load_skill": load_skill,
 }
 
